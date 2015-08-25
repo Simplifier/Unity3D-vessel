@@ -1,8 +1,7 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public class Main : MonoBehaviour {
 	public int shipStartY = -200;
@@ -14,9 +13,9 @@ public class Main : MonoBehaviour {
 
 	private Game defaultGame;
 	private readonly Inputs input = new Inputs(0, .034f, false);
-	//private Sprite container = new Sprite();
 	private Material material;
 	private const float pixelsPerUnit = 50;
+    private Stack<Mesh> meshPool = new Stack<Mesh>(); 
 
 	void Start () {
 		defaultGame = getDefaultGame();
@@ -27,13 +26,12 @@ public class Main : MonoBehaviour {
 		// Unity has a built-in shader that is useful for drawing
 		// simple colored things.
 		var shader = Shader.Find ("Hidden/Internal-Colored");
-		material = new Material (shader);
-		material.hideFlags = HideFlags.HideAndDontSave;
-		// Turn on alpha blending
-		material.SetInt ("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-		material.SetInt ("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+	    material = new Material(shader) {hideFlags = HideFlags.HideAndDontSave};
+	    // Turn on alpha blending
+		material.SetInt ("_SrcBlend", (int)BlendMode.SrcAlpha);
+		material.SetInt ("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
 		// Turn backface culling off
-		material.SetInt ("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+		material.SetInt ("_Cull", (int)CullMode.Off);
 		// Turn off depth writes
 		material.SetInt ("_ZWrite", 0);
 		material.SetPass (0);
@@ -152,26 +150,25 @@ public class Main : MonoBehaviour {
 		return new Debri(sx, sy, vx, vy, 10);
 	}
 
-	private List<Debri> addDebri(Ship ship, int cnt, List<Debri> debri) {
-		var l = debri.Count();
+	private List<Debri> addDebri(Ship ship, List<Debri> debri) {
+		var l = debri.Count;
 		if (l == 0) {
 			for (var n = 0; n <= 360; n++) {
 				if (n % 12 == 0) {
-					debri.Insert(0, addD(ship.x, ship.y, n));
+					debri.Add(addD(ship.x, ship.y, n));
 				}
 			}
 		} else {
-			debri.Select(debris => {
-				Debug.Log(11);
+			return debri.Select(debris => {
 			    debris.deg = (debris.deg + 20) % 360;
                 return debris;
-			});
+			}).ToList();
 		}
 		return debri;
 	}
 
-	private List<Debri> stepDebri(float t, int cnt, Ship ship, List<Debri> debri){
-	    return addDebri(ship, cnt, debri).Select(debris => debris.stepObj(t) as Debri).ToList();
+	private List<Debri> stepDebri(float t, Ship ship, List<Debri> debri){
+	    return addDebri(ship, debri).Select(debris => debris.stepObj(t) as Debri).ToList();
 	}
 
 	private bool inside(Ship ship, Piece piece) {
@@ -205,7 +202,7 @@ public class Main : MonoBehaviour {
 		    defaultGame.state = State.Waiting;
 		    return defaultGame;
 		}
-		game.debri = stepDebri(input.delta, game.cnt, game.ship, game.debri);
+		game.debri = stepDebri(input.delta, game.ship, game.debri);
 		game.ship = hideShip(game.ship);
 		game.cnt++;
 		return game;
@@ -216,13 +213,12 @@ public class Main : MonoBehaviour {
 			defaultGame = getDefaultGame();
 			defaultGame.state = State.Playing;
 			return defaultGame;
-		} else {
-			game.pieces = stepPieces(input.delta, game);
-			game.ship = autoShip(game.t, game.ship);
-			game.t = updateTunnel(game);
-			game.cnt++;
-			return game;
 		}
+	    game.pieces = stepPieces(input.delta, game);
+	    game.ship = autoShip(game.t, game.ship);
+	    game.t = updateTunnel(game);
+	    game.cnt++;
+	    return game;
 	}
 
 	private Game stepGame(Inputs input, Game game) {
@@ -248,24 +244,34 @@ public class Main : MonoBehaviour {
 	}
 	
 	//DISPLAY
-	/*private void drawPiece(Piece piece){
-		var p:Shape = new Shape;
-		p.graphics.beginFill(0xef2929);
-		p.graphics.drawRect(-piece.width / 2, -piece.height / 2, piece.width, piece.height);
-		p.x = piece.x;
-		p.y = -piece.y;
-		return p;
-	}*/
+	private void drawPiece(Piece piece) {
+	    Color color;
+        Color.TryParseHexString("#ef2929", out color);
+	    var mesh = meshPool.Count > 0 ? meshPool.Pop() : new Mesh();
+	    mesh.vertices = new[] {
+	        new Vector3(-piece.width/2/pixelsPerUnit, -piece.height/2/pixelsPerUnit, 0),
+	        new Vector3(piece.width/2/pixelsPerUnit, -piece.height/2/pixelsPerUnit, 0),
+	        new Vector3(piece.width/2/pixelsPerUnit, piece.height/2/pixelsPerUnit, 0),
+	        new Vector3(-piece.width/2/pixelsPerUnit, piece.height/2/pixelsPerUnit, 0)
+	    };
+	    mesh.triangles = new[] {0, 1, 3, 1, 2, 3};
+	    mesh.colors = new[] {color, color, color, color};
+
+		Graphics.DrawMesh (mesh, new Vector3(piece.x / pixelsPerUnit, piece.y / pixelsPerUnit, 0), Quaternion.identity, material, 0);
+	}
 
 	private void drawDebri(Debri d) {
-		Mesh mesh = new Mesh();
-		mesh.vertices = new Vector3[]{
-			new Vector3(0, 0, 0), 
-			new Vector3(10 / pixelsPerUnit, 0, 0),
-			new Vector3(5 / pixelsPerUnit, 8.66f / pixelsPerUnit, 0)
-		};
-		mesh.triangles = new int[] {0, 1, 2};
-		var rotation = Quaternion.Euler(0, 0, d.deg);
+	    var mesh = meshPool.Count > 0 ? meshPool.Pop() : new Mesh();
+        mesh.Clear();
+	    mesh.vertices = new[] {
+	        new Vector3(-5/pixelsPerUnit, -4.33f/pixelsPerUnit, 0),
+	        new Vector3(5/pixelsPerUnit, -4.33f/pixelsPerUnit, 0),
+	        new Vector3(0, 4.33f/pixelsPerUnit, 0)
+	    };
+	    mesh.triangles = new[] {0, 1, 2};
+	    mesh.colors = new[] {Color.white, Color.white, Color.white};
+
+	    var rotation = Quaternion.Euler(0, 0, d.deg);
 		Graphics.DrawMesh (mesh, new Vector3(d.x / pixelsPerUnit, d.y / pixelsPerUnit, 0), rotation, material, 0);
 	}
 	
@@ -300,21 +306,25 @@ public class Main : MonoBehaviour {
 			throw new Error("invalid state");
 		}
 	}*/
-	
-	private void drawShip(Ship ship) {
-		Mesh mesh = new Mesh();
-		mesh.vertices = new Vector3[]{
-			new Vector3(0, 0, 0), 
-			new Vector3(20 / pixelsPerUnit, 0, 0),
-			new Vector3(10 / pixelsPerUnit, 17 / pixelsPerUnit, 0)
-		};
-		mesh.triangles = new int[] {0, 1, 2};
-		Graphics.DrawMesh (mesh, new Vector3(ship.x / pixelsPerUnit, ship.y / pixelsPerUnit, 0), Quaternion.identity, material, 0);
+
+    private void drawShip(Ship ship){
+        var mesh = meshPool.Count > 0 ? meshPool.Pop() : new Mesh();
+        mesh.Clear();
+        mesh.vertices = new[] {
+            new Vector3(-10/pixelsPerUnit, -8.66f/pixelsPerUnit, 0),
+            new Vector3(10/pixelsPerUnit, -8.66f/pixelsPerUnit, 0),
+            new Vector3(0, 8.66f/pixelsPerUnit, 0)
+        };
+        mesh.triangles = new[] { 0, 1, 2 };
+        mesh.colors = new[] { Color.white, Color.white, Color.white };
+
+	    Graphics.DrawMesh (mesh, new Vector3(ship.x / pixelsPerUnit, ship.y / pixelsPerUnit, 0), Quaternion.identity, material, 0);
 	}
 	
 	private void display(Game game) {
+	    meshPool = new Stack<Mesh>(FindObjectsOfType<Mesh>());
 		foreach(var piece in game.pieces) {
-			//drawPiece(piece);
+			drawPiece(piece);
 		}
 		drawShip(game.ship);
 		foreach(var debri in game.debri) {
