@@ -15,17 +15,28 @@ public class Main : MonoBehaviour {
 	private Game defaultGame;
 	private readonly Inputs input = new Inputs(0, .034f, false);
 	//private Sprite container = new Sprite();
+	private Material material;
+	private const float pixelsPerUnit = 50;
 
 	void Start () {
 		defaultGame = getDefaultGame();
+		createMaterial ();
+	}
 
-		/*graphics.beginFill(0xa40000);
-		graphics.drawRect(0, 0, stage.stageWidth, stage.stageHeight);
-		graphics.endFill();
-
-		container.x = int(stage.stageWidth / 2);
-		container.y = int(stage.stageHeight / 2);
-		addChild(container);*/
+	private void createMaterial(){
+		// Unity has a built-in shader that is useful for drawing
+		// simple colored things.
+		var shader = Shader.Find ("Hidden/Internal-Colored");
+		material = new Material (shader);
+		material.hideFlags = HideFlags.HideAndDontSave;
+		// Turn on alpha blending
+		material.SetInt ("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+		material.SetInt ("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+		// Turn backface culling off
+		material.SetInt ("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+		// Turn off depth writes
+		material.SetInt ("_ZWrite", 0);
+		material.SetPass (0);
 	}
 
 	void Update() {
@@ -41,25 +52,24 @@ public class Main : MonoBehaviour {
 	    input.delta = Time.deltaTime;
 
 		defaultGame = stepStart(input, defaultGame);
-		//display(defaultGame);
+		display(defaultGame);
 	}
 
 	private Game getDefaultGame() {
-		var game = new Game{
+		var pieces = new List<Piece>();
+		for (var n = -60; n <= 0; n++) {
+			pieces.Add(new Piece(curve(n, 20), (n + 30) * 10, 0, -startSpeed, startWidth, startPieceH));
+		}
+
+		return new Game{
 		    cnt = 0,
 		    score = 0,
 		    ship = new Ship(0, shipStartY, 0, 0),
-		    t = new Tunnel(startWidth, startSpeed, (float)curve(0, 20), 300, startPieceH, 20),
+		    t = new Tunnel(startWidth, startSpeed, curve(0, 20), 300, startPieceH, 20),
 		    debri = new List<Debri>(),
-		    state = State.Waiting
+		    state = State.Waiting,
+			pieces = pieces
 		};
-
-		var pieces = new List<Piece>();
-		for (var n = -60; n <= 0; n++) {
-			((IList) pieces).Add(new Piece((float)curve(n, 20), (n + 30) * 10, 0, -startSpeed, startWidth, startPieceH));
-		}
-		game.pieces = pieces;
-		return game;
 	}
 
 	private float degrees(float d) {
@@ -67,7 +77,7 @@ public class Main : MonoBehaviour {
 	}
 
 	//updates
-	private double curve(int cnt, float ampl) {
+	private float curve(int cnt, float ampl) {
 		var degree = degrees(cnt) * 2;
 		var segment = (int)Mathf.Floor((float)cnt / 200) % 7; //one more than # of segs
 		switch (segment) {
@@ -109,7 +119,7 @@ public class Main : MonoBehaviour {
 		var state = game.state;
 		var speed = game.state == State.Playing ? t.speed + speedDelta : t.speed;
 		var ampl = game.state == State.Playing ? updateAmpl(t.ampl, 180) : t.ampl;
-		var next = (float)curve(game.cnt, ampl);
+		var next = curve(game.cnt, ampl);
 		var nx = withinN(2, next, t.x) ? next : towards(next, t.x);
 		var nwidth = t.width < minWidth || state == State.Waiting ? t.width : t.width - .1f;
 
@@ -152,6 +162,7 @@ public class Main : MonoBehaviour {
 			}
 		} else {
 			debri.Select(debris => {
+				Debug.Log(11);
 			    debris.deg = (debris.deg + 20) % 360;
                 return debris;
 			});
@@ -200,7 +211,7 @@ public class Main : MonoBehaviour {
 		return game;
 	}
 
-private Game stepWaiting(Inputs input, Game game) {
+	private Game stepWaiting(Inputs input, Game game) {
 		if (input.space) {
 			defaultGame = getDefaultGame();
 			defaultGame.state = State.Playing;
@@ -233,97 +244,84 @@ private Game stepWaiting(Inputs input, Game game) {
 			case State.Waiting:
 				return stepWaiting(input, game);
 		}
-	    return null;
+		return null;
 	}
-
+	
 	//DISPLAY
-	/*private Shape drawPiece(Piece piece):{
+	/*private void drawPiece(Piece piece){
 		var p:Shape = new Shape;
 		p.graphics.beginFill(0xef2929);
 		p.graphics.drawRect(-piece.width / 2, -piece.height / 2, piece.width, piece.height);
 		p.x = piece.x;
 		p.y = -piece.y;
 		return p;
+	}*/
+
+	private void drawDebri(Debri d) {
+		Mesh mesh = new Mesh();
+		mesh.vertices = new Vector3[]{
+			new Vector3(0, 0, 0), 
+			new Vector3(10 / pixelsPerUnit, 0, 0),
+			new Vector3(5 / pixelsPerUnit, 8.66f / pixelsPerUnit, 0)
+		};
+		mesh.triangles = new int[] {0, 1, 2};
+		var rotation = Quaternion.Euler(0, 0, d.deg);
+		Graphics.DrawMesh (mesh, new Vector3(d.x / pixelsPerUnit, d.y / pixelsPerUnit, 0), rotation, material, 0);
 	}
-
-	private Sprite drawDebri(Debri d) {
-		var triangle = new Shape;
-		triangle.graphics.beginFill(0xffffff);
-		triangle.graphics.lineTo(10, 0);
-		triangle.graphics.lineTo(5, 8.66);
-		triangle.graphics.lineTo(0, 0);
-		triangle.x = -triangle.width / 2;
-		triangle.y = -triangle.height / 2;
-
-		var c:Sprite = new Sprite;
-		c.rotation = d.deg;
-		c.x = d.x;
-		c.y = -d.y;
-		c.addChild(triangle);
-
-		return c;
-	}
-
-	private Sprite drawShip(Ship ship) {
-		var triangle:Shape = new Shape;
-		triangle.graphics.beginFill(0xffffff);
-		triangle.graphics.lineTo(20, 0);
-		triangle.graphics.lineTo(10, -17);
-		triangle.graphics.lineTo(0, 0);
-		triangle.x = -triangle.width / 2;
-		triangle.y = triangle.height / 2;
-
-		var c:Sprite = new Sprite;
-		c.x = ship.x;
-		c.y = -ship.y;
-		c.addChild(triangle);
-
-		return c;
-	}
-
-	private Sprite txt(string t) {
+	
+	/*private Sprite txt(string t) {
 		var tf = new TextField;
 		tf.autoSize = TextFieldAutoSize.LEFT;
-
+		
 		var format:TextFormat = new TextFormat();
 		format.font = "Arial";
-        format.color = 0xffffff;
-        format.size = 15;
-
-        tf.defaultTextFormat = format;
+		format.color = 0xffffff;
+		format.size = 15;
+		
+		tf.defaultTextFormat = format;
 		tf.text = t;
 		tf.x = -int(tf.width / 2);
 		tf.y = -int(tf.height / 2);
-
+		
 		var c:Sprite = new Sprite;
 		c.addChild(tf);
 		return c;
 	}
-
+	
 	private string displayText(Game game) {
 		switch(game.state) {
-			case State.Playing:
-				return "";
-			case State.Dead:
-				return game.score.ToString();
-			case State.Waiting:
-				return "Space to start then arrows";
-			default:
-				throw new Error("invalid state");
+		case State.Playing:
+			return "";
+		case State.Dead:
+			return game.score.ToString();
+		case State.Waiting:
+			return "Space to start then arrows";
+		default:
+			throw new Error("invalid state");
 		}
-	}
-
-	private void display(Game game) {
-		container.removeChildren();
-		foreach(var piece in game.pieces) {
-			container.addChild(drawPiece(piece));
-		}
-		container.addChild(drawShip(game.ship));
-		foreach(var debri in game.debri) {
-			container.addChild(drawDebri(debri));
-		}
-		container.addChild(txt(displayText(game)));
 	}*/
+	
+	private void drawShip(Ship ship) {
+		Mesh mesh = new Mesh();
+		mesh.vertices = new Vector3[]{
+			new Vector3(0, 0, 0), 
+			new Vector3(20 / pixelsPerUnit, 0, 0),
+			new Vector3(10 / pixelsPerUnit, 17 / pixelsPerUnit, 0)
+		};
+		mesh.triangles = new int[] {0, 1, 2};
+		Graphics.DrawMesh (mesh, new Vector3(ship.x / pixelsPerUnit, ship.y / pixelsPerUnit, 0), Quaternion.identity, material, 0);
+	}
+	
+	private void display(Game game) {
+		foreach(var piece in game.pieces) {
+			//drawPiece(piece);
+		}
+		drawShip(game.ship);
+		foreach(var debri in game.debri) {
+			drawDebri(debri);
+		}
+		//displayText(game);
+	}
 }
 
 class Inputs {
