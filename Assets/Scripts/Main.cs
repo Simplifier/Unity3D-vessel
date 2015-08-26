@@ -1,7 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.UI;
 
 public class Main : MonoBehaviour {
 	public int shipStartY = -200;
@@ -16,8 +18,13 @@ public class Main : MonoBehaviour {
 	private Material material;
 	private const float pixelsPerUnit = 50;
 	private Stack<Mesh> meshPool = new Stack<Mesh>();
+	private Text label;
+	private SpriteRenderer title;
 
 	private void Start() {
+		label = FindObjectOfType<Text>();
+		title = FindObjectOfType<SpriteRenderer>();
+
 		defaultGame = getDefaultGame();
 		createMaterial();
 	}
@@ -275,23 +282,8 @@ public class Main : MonoBehaviour {
 		Graphics.DrawMesh(mesh, new Vector3(d.x / pixelsPerUnit, d.y / pixelsPerUnit, 0), rotation, material, 0);
 	}
 
-	/*private Sprite txt(string t) {
-		var tf = new TextField;
-		tf.autoSize = TextFieldAutoSize.LEFT;
-		
-		var format:TextFormat = new TextFormat();
-		format.font = "Arial";
-		format.color = 0xffffff;
-		format.size = 15;
-		
-		tf.defaultTextFormat = format;
-		tf.text = t;
-		tf.x = -int(tf.width / 2);
-		tf.y = -int(tf.height / 2);
-		
-		var c:Sprite = new Sprite;
-		c.addChild(tf);
-		return c;
+	private void txt(string t) {
+		label.text = t;
 	}
 	
 	private string displayText(Game game) {
@@ -303,9 +295,13 @@ public class Main : MonoBehaviour {
 		case State.Waiting:
 			return "Space to start then arrows";
 		default:
-			throw new Error("invalid state");
+			throw new Exception("invalid state");
 		}
-	}*/
+	}
+
+	private void displayTitle(Game game) {
+		title.enabled = game.state != State.Playing;
+	}
 
 	private void drawShip(Ship ship) {
 		var mesh = meshPool.Count > 0 ? meshPool.Pop() : new Mesh();
@@ -330,7 +326,8 @@ public class Main : MonoBehaviour {
 		foreach (var debri in game.debri) {
 			drawDebri(debri);
 		}
-		//displayText(game);
+		txt(displayText(game));
+		displayTitle(game);
 	}
 }
 
